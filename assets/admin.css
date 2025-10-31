@@ -1,0 +1,79 @@
+/**
+ * Admin Styles
+ */
+.ump-mm-admin-wrap {
+	max-width: 1200px;
+}
+
+.ump-mm-search-section,
+.ump-mm-auto-rules-section {
+	margin-top: 20px;
+}
+
+.ump-mm-search-form,
+.ump-mm-bulk-actions {
+	margin: 20px 0;
+	padding: 15px;
+	background: #fff;
+	border: 1px solid #ccc;
+	border-radius: 4px;
+}
+
+.ump-mm-search-form label,
+.ump-mm-bulk-actions label {
+	display: inline-block;
+	margin-right: 10px;
+	font-weight: 600;
+	min-width: 150px;
+}
+
+.ump-mm-select {
+	min-width: 300px;
+	margin-right: 10px;
+	padding: 5px;
+}
+
+.ump-mm-users-results {
+	margin-top: 30px;
+}
+
+.ump-mm-users-list-wrapper {
+	margin-top: 20px;
+}
+
+.ump-mm-users-list-wrapper table {
+	margin-top: 10px;
+}
+
+.ump-mm-add-rule-form {
+	margin: 20px 0;
+	padding: 20px;
+	background: #fff;
+	border: 1px solid #ddd;
+	border-radius: 4px;
+}
+
+.ump-mm-rule-field {
+	margin-bottom: 15px;
+}
+
+.ump-mm-rule-field label {
+	display: block;
+	margin-bottom: 5px;
+	font-weight: 600;
+}
+
+.ump-mm-existing-rules {
+	margin-top: 30px;
+}
+
+.ump-mm-existing-rules table {
+	margin-top: 15px;
+}
+
+.ump-mm-admin-wrap .description {
+	color: #666;
+	font-style: italic;
+	margin-bottom: 20px;
+}
+
