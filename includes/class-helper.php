@@ -72,11 +72,56 @@ class UMP_MM_Helper {
 	 * @return bool
 	 */
 	public static function user_has_active_membership( $user_id, $membership_id ) {
-		if ( ! class_exists( '\Indeed\Ihc\UserSubscriptions' ) ) {
+		global $wpdb;
+		
+		if ( ! $user_id || ! $membership_id ) {
 			return false;
 		}
 		
-		return \Indeed\Ihc\UserSubscriptions::isActive( $user_id, $membership_id );
+		$current_time = current_time( 'mysql' );
+		
+		// Check directly in database for an ACTIVE subscription
+		$subscription = $wpdb->get_row(
+			$wpdb->prepare(
+				"SELECT id, expire_time, start_time, status 
+				FROM {$wpdb->prefix}ihc_user_levels 
+				WHERE user_id = %d 
+				AND level_id = %d 
+				AND status = 1
+				ORDER BY id DESC
+				LIMIT 1",
+				$user_id,
+				$membership_id
+			)
+		);
+		
+		if ( ! $subscription ) {
+			return false;
+		}
+		
+		// Check if subscription is actually active (not expired and started)
+		$now = strtotime( $current_time );
+		
+		// Check start time
+		if ( ! empty( $subscription->start_time ) && $subscription->start_time !== '0000-00-00 00:00:00' ) {
+			$start_time = strtotime( $subscription->start_time );
+			if ( $start_time > $now ) {
+				// Subscription hasn't started yet
+				return false;
+			}
+		}
+		
+		// Check expire time
+		if ( ! empty( $subscription->expire_time ) && $subscription->expire_time !== '0000-00-00 00:00:00' ) {
+			$expire_time = strtotime( $subscription->expire_time );
+			if ( $expire_time < $now ) {
+				// Subscription has expired
+				return false;
+			}
+		}
+		
+		// If we got here, subscription exists and dates are valid - it's active
+		return true;
 	}
 	
 	/**
@@ -138,8 +183,55 @@ class UMP_MM_Helper {
 		}
 		
 		// Check if user already has this membership active
-		if ( self::user_has_active_membership( $user_id, $membership_id ) ) {
-			return new WP_Error( 'already_has_membership', __( 'User-ul are deja acest membership activ.', 'ump-membership-manager' ) );
+		// Only skip if membership is TRULY active (not expired, not pending)
+		$has_active = self::user_has_active_membership( $user_id, $membership_id );
+		
+		if ( $has_active ) {
+			// Double-check: verify subscription is really active by checking dates
+			global $wpdb;
+			$current_time = current_time( 'mysql' );
+			$now = strtotime( $current_time );
+			
+			$subscription = $wpdb->get_row(
+				$wpdb->prepare(
+					"SELECT expire_time, start_time, status 
+					FROM {$wpdb->prefix}ihc_user_levels 
+					WHERE user_id = %d 
+					AND level_id = %d 
+					AND status = 1
+					ORDER BY id DESC
+					LIMIT 1",
+					$user_id,
+					$membership_id
+				)
+			);
+			
+			if ( $subscription ) {
+				// Check if it's really active
+				$is_really_active = true;
+				
+				// Check start time
+				if ( ! empty( $subscription->start_time ) && $subscription->start_time !== '0000-00-00 00:00:00' ) {
+					$start_time = strtotime( $subscription->start_time );
+					if ( $start_time > $now ) {
+						$is_really_active = false;
+					}
+				}
+				
+				// Check expire time
+				if ( $is_really_active && ! empty( $subscription->expire_time ) && $subscription->expire_time !== '0000-00-00 00:00:00' ) {
+					$expire_time = strtotime( $subscription->expire_time );
+					if ( $expire_time < $now ) {
+						$is_really_active = false;
+					}
+				}
+				
+				// Only return error if it's REALLY active
+				if ( $is_really_active ) {
+					return new WP_Error( 'already_has_membership', __( 'User-ul are deja acest membership activ.', 'ump-membership-manager' ) );
+				}
+				// If not really active, continue and add/update the membership
+			}
 		}
 		
 		if ( ! class_exists( '\Indeed\Ihc\UserSubscriptions' ) ) {
