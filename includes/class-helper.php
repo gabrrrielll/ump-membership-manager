@@ -145,15 +145,17 @@ class UMP_MM_Helper
 
         $current_time = current_time('mysql');
 
-        // Get user IDs with their assignment date (update_time) who have this membership and it's active
+        // Get user IDs with their assignment date and ID (for sorting by newest)
+        // Using id field as it increases with time, so higher id = newer assignment
         $user_subscriptions = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT user_id, update_time, start_time
+                "SELECT id, user_id, update_time, start_time
 				FROM {$wpdb->prefix}ihc_user_levels 
 				WHERE level_id = %d 
 				AND status = 1
 				AND (expire_time = '0000-00-00 00:00:00' OR expire_time > %s)
-				AND (start_time = '0000-00-00 00:00:00' OR start_time <= %s)",
+				AND (start_time = '0000-00-00 00:00:00' OR start_time <= %s)
+				ORDER BY id DESC",
                 $membership_id,
                 $current_time,
                 $current_time
@@ -168,19 +170,27 @@ class UMP_MM_Helper
             // Verify user really has active membership
             if (self::user_has_active_membership($user_id, $membership_id)) {
                 // Use update_time as assignment date, fallback to start_time
+                // Also use id for secondary sorting (newer id = newer assignment)
                 $assignment_date = ! empty($subscription->update_time) && $subscription->update_time !== '0000-00-00 00:00:00'
                     ? $subscription->update_time
-                    : $subscription->start_time;
+                    : (! empty($subscription->start_time) && $subscription->start_time !== '0000-00-00 00:00:00' ? $subscription->start_time : date('Y-m-d H:i:s', 0));
 
                 $active_users_with_dates[] = array(
                     'user_id' => $user_id,
                     'assignment_date' => $assignment_date,
+                    'id' => (int) $subscription->id, // Use id as tiebreaker and primary sort
                 );
             }
         }
 
-        // Sort by assignment date descending (newest first)
+        // Sort by ID descending first (newest first), then by date
         usort($active_users_with_dates, function ($a, $b) {
+            // Primary sort: by id (higher id = newer)
+            $id_diff = $b['id'] - $a['id'];
+            if ($id_diff !== 0) {
+                return $id_diff;
+            }
+            // Secondary sort: by date
             return strtotime($b['assignment_date']) - strtotime($a['assignment_date']);
         });
 
