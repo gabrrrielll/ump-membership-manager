@@ -4,7 +4,7 @@
  * Plugin URI: https://github.com/gabrrrielll/ump-membership-manager
  * Description: Extensie pentru Indeed Ultimate Membership Pro care permite gestionarea userilor după membership și reguli automate de atribuire a membreships.
  * Version: 1.0.0
- * Author: Your Allmedia Creation
+ * Author: Allmedia Creation
  * Author URI: https://allmediacreation.ro
  * Text Domain: ump-membership-manager
  * Domain Path: /languages
