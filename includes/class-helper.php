@@ -149,14 +149,21 @@ class UMP_MM_Helper {
 		// Assign membership
 		$result = \Indeed\Ihc\UserSubscriptions::assign( $user_id, $membership_id );
 		
-		if ( ! $result ) {
+		if ( $result === false ) {
 			return new WP_Error( 'assign_failed', __( 'Nu s-a putut atribui membership-ul.', 'ump-membership-manager' ) );
 		}
 		
-		// Activate it
+		// Activate it - makeComplete returns number of affected rows, can be 0 or false on failure
 		$activate = \Indeed\Ihc\UserSubscriptions::makeComplete( $user_id, $membership_id );
 		
-		if ( ! $activate ) {
+		// makeComplete can return 0 rows if subscription already exists and is updated
+		// Only fail if it explicitly returns false
+		if ( $activate === false ) {
+			// Check if subscription actually exists and is active now
+			if ( self::user_has_active_membership( $user_id, $membership_id ) ) {
+				// Membership is actually active, so it worked
+				return true;
+			}
 			return new WP_Error( 'activate_failed', __( 'Nu s-a putut activa membership-ul.', 'ump-membership-manager' ) );
 		}
 		

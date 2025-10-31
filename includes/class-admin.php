@@ -411,16 +411,40 @@ class UMP_MM_Admin
         );
 
         foreach ($user_ids as $user_id) {
+            // Skip if user_id is invalid
+            if (! $user_id || $user_id <= 0) {
+                $results['errors']++;
+                $results['messages'][] = sprintf(
+                    __('User ID invalid: %s', 'ump-membership-manager'),
+                    $user_id
+                );
+                continue;
+            }
+
             $result = UMP_MM_Helper::add_membership_to_user($user_id, $membership_id);
 
             if (is_wp_error($result)) {
                 $results['errors']++;
                 $user = get_userdata($user_id);
+                $error_message = $result->get_error_message();
+                $error_code = $result->get_error_code();
+                
                 $results['messages'][] = sprintf(
-                    __('User %s: %s', 'ump-membership-manager'),
-                    $user ? $user->user_login : $user_id,
-                    $result->get_error_message()
+                    __('User %s (ID: %d): %s [Code: %s]', 'ump-membership-manager'),
+                    $user ? $user->user_login : 'N/A',
+                    $user_id,
+                    $error_message,
+                    $error_code
                 );
+                
+                // Log for debugging
+                error_log(sprintf(
+                    'UMP MM: Failed to add membership %d to user %d: %s (Code: %s)',
+                    $membership_id,
+                    $user_id,
+                    $error_message,
+                    $error_code
+                ));
             } else {
                 $results['success']++;
             }

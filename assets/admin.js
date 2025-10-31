@@ -112,13 +112,16 @@
 					if (response.success) {
 						var msg = 'Succes: ' + response.data.success + ' utilizatori';
 						if (response.data.errors > 0) {
-							msg += ', Erori: ' + response.data.errors;
+							msg += '\nErori: ' + response.data.errors;
 						}
-						alert(msg);
 						
+						// Show error messages if any
 						if (response.data.messages && response.data.messages.length > 0) {
-							console.log('Messages:', response.data.messages);
+							msg += '\n\nDetalii erori:\n' + response.data.messages.join('\n');
+							console.log('Error messages:', response.data.messages);
 						}
+						
+						alert(msg);
 					} else {
 						alert(response.data.message || umpMM.strings.error);
 					}
