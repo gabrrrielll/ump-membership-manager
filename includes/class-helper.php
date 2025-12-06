@@ -205,9 +205,10 @@ class UMP_MM_Helper
      *
      * @param int $user_id User ID
      * @param int $membership_id Membership ID
+     * @param bool $extend_if_active If true, extend/renew membership even if already active
      * @return bool|WP_Error Success or error
      */
-    public static function add_membership_to_user($user_id, $membership_id)
+    public static function add_membership_to_user($user_id, $membership_id, $extend_if_active = false)
     {
         if (! $user_id || ! $membership_id) {
             return new WP_Error('invalid_params', __('Parametri invalizi.', 'ump-membership-manager'));
@@ -220,9 +221,10 @@ class UMP_MM_Helper
 
         // Check if user already has this membership active
         // Only skip if membership is TRULY active (not expired, not pending)
+        // Unless $extend_if_active is true, in which case we'll extend/renew it
         $has_active = self::user_has_active_membership($user_id, $membership_id);
 
-        if ($has_active) {
+        if ($has_active && ! $extend_if_active) {
             // Double-check: verify subscription is really active by checking dates
             global $wpdb;
             $current_time = current_time('mysql');
@@ -262,13 +264,14 @@ class UMP_MM_Helper
                     }
                 }
 
-                // Only return error if it's REALLY active
+                // Only return error if it's REALLY active and we're not extending
                 if ($is_really_active) {
                     return new WP_Error('already_has_membership', __('User-ul are deja acest membership activ.', 'ump-membership-manager'));
                 }
                 // If not really active, continue and add/update the membership
             }
         }
+        // If $extend_if_active is true, we'll continue to extend/renew the membership
 
         if (! class_exists('\Indeed\Ihc\UserSubscriptions')) {
             return new WP_Error('ihc_not_available', __('IHC nu este disponibil.', 'ump-membership-manager'));
