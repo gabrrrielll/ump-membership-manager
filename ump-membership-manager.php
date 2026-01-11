@@ -3,7 +3,7 @@
  * Plugin Name: UMP Membership Manager
  * Plugin URI: https://github.com/gabrrrielll/ump-membership-manager
  * Description: Extensie pentru Indeed Ultimate Membership Pro care permite gestionarea userilor după membership și reguli automate de atribuire a membreships.
- * Version: 1.0.0
+ * Version: 1.1.0
  * Author: Allmedia Creation
  * Author URI: https://allmediacreation.ro
  * Text Domain: ump-membership-manager
@@ -153,6 +153,27 @@ function ump_mm_init()
 {
     return UMP_Membership_Manager::get_instance();
 }
+
+/**
+ * Bug #17 Fix: Deactivation hook
+ * Clean up transients and temporary data on deactivation
+ */
+function ump_mm_deactivate()
+{
+    global $wpdb;
+    
+    // Delete all rate limit transients
+    $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_ump_mm_rate_limit_%' OR option_name LIKE '_transient_timeout_ump_mm_rate_limit_%'");
+    
+    // Delete all lock transients
+    $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_ump_mm_lock_%' OR option_name LIKE '_transient_timeout_ump_mm_lock_%'");
+    
+    // Log deactivation
+    error_log('UMP Membership Manager: Plugin deactivated, transients cleaned up');
+}
+
+// Register deactivation hook
+register_deactivation_hook(__FILE__, 'ump_mm_deactivate');
 
 // Start the plugin
 ump_mm_init();

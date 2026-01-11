@@ -4,6 +4,41 @@
 (function($) {
 	'use strict';
 	
+	// Bug #6 Fix: Add error logging helper
+	function logError(context, error, data) {
+		console.error('[UMP MM Error]', context, {
+			error: error,
+			data: data,
+			timestamp: new Date().toISOString()
+		});
+	}
+	
+	// Bug #9 Fix: Safe HTML creation helper
+	function escapeHtml(text) {
+		var map = {
+			'&': '&amp;',
+			'<': '&lt;',
+			'>': '&gt;',
+			'"': '&quot;',
+			"'": '&#039;'
+		};
+		return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+	}
+	
+	// Bug #4 Fix: Handle nonce expiration
+	function handleAjaxError(response, context) {
+		if (response.data && response.data.code === 'nonce_expired') {
+			alert(umpMM.strings.sessionExpired);
+			location.reload();
+			return true;
+		}
+		if (response.data && response.data.code === 'rate_limit_exceeded') {
+			alert(response.data.message);
+			return true;
+		}
+		return false;
+	}
+	
 	$(document).ready(function() {
 		
 		// Search users
@@ -16,6 +51,7 @@
 			}
 			
 			var $btn = $(this);
+			// Bug #5 Fix: Use localized strings
 			$btn.prop('disabled', true).text(umpMM.strings.loading);
 			
 			$.ajax({
@@ -27,24 +63,33 @@
 					membership_id: membershipId
 				},
 				success: function(response) {
-					$btn.prop('disabled', false).text('Caută Utilizatori');
+					$btn.prop('disabled', false).text(umpMM.strings.searchUsers);
 					
 					if (response.success) {
-						displayUsers(response.data.users);
+						displayUsers(response.data.users, response.data.total);
 						$('#ump-mm-users-results').show();
 					} else {
-						alert(response.data.message || umpMM.strings.error);
+						// Bug #4 Fix: Handle special error codes
+						if (!handleAjaxError(response, 'search_users')) {
+							alert(response.data.message || umpMM.strings.error);
+						}
 					}
 				},
-				error: function() {
-					$btn.prop('disabled', false).text('Caută Utilizatori');
+				error: function(xhr, status, error) {
+					// Bug #6 Fix: Log error details
+					logError('AJAX search_users failed', error, {
+						status: status,
+						xhr: xhr,
+						membershipId: membershipId
+					});
+					$btn.prop('disabled', false).text(umpMM.strings.searchUsers);
 					alert(umpMM.strings.error);
 				}
 			});
 		});
 		
 		// Display users
-		function displayUsers(users) {
+		function displayUsers(users, total) {
 			var $list = $('#ump-mm-users-list');
 			$list.empty();
 			
@@ -53,13 +98,25 @@
 				return;
 			}
 			
+			// Show pagination info if there are more users
+			if (total && total > users.length) {
+				var infoMsg = 'Afișate primele ' + users.length + ' din ' + total + ' utilizatori.';
+				$list.before('<p class="ump-mm-pagination-info">' + infoMsg + '</p>');
+			}
+			
 			$.each(users, function(index, user) {
 				var $row = $('<tr></tr>');
-				$row.append('<td><input type="checkbox" class="ump-mm-user-checkbox" value="' + user.id + '"></td>');
-				$row.append('<td>' + user.id + '</td>');
-				$row.append('<td>' + user.username + '</td>');
-				$row.append('<td>' + user.email + '</td>');
-				$row.append('<td>' + (user.name || '-') + '</td>');
+				
+				// Bug #9 Fix: Use safe DOM manipulation instead of string concatenation
+				var $checkbox = $('<td></td>').append(
+					$('<input type="checkbox" class="ump-mm-user-checkbox">').val(user.id)
+				);
+				var $id = $('<td></td>').text(user.id);
+				var $username = $('<td></td>').text(user.username);
+				var $email = $('<td></td>').text(user.email);
+				var $name = $('<td></td>').text(user.name || '-');
+				
+				$row.append($checkbox).append($id).append($username).append($email).append($name);
 				$list.append($row);
 			});
 			
@@ -90,7 +147,9 @@
 				return;
 			}
 			
-			if (!confirm('Ești sigur că vrei să adaugi acest membership la ' + selectedUsers.length + ' utilizatori selectați?')) {
+			// Bug #5 Fix: Use localized string with placeholder
+			var confirmMsg = umpMM.strings.confirmBulk.replace('%d', selectedUsers.length);
+			if (!confirm(confirmMsg)) {
 				return;
 			}
 			
@@ -107,7 +166,7 @@
 					membership_id: membershipId
 				},
 				success: function(response) {
-					$btn.prop('disabled', false).text('Adaugă la Utilizatorii Selectați');
+					$btn.prop('disabled', false).text(umpMM.strings.addToSelected);
 					
 					if (response.success) {
 						var msg = 'Succes: ' + response.data.success + ' utilizatori';
@@ -118,16 +177,26 @@
 						// Show error messages if any
 						if (response.data.messages && response.data.messages.length > 0) {
 							msg += '\n\nDetalii erori:\n' + response.data.messages.join('\n');
-							console.log('Error messages:', response.data.messages);
+							// Bug #6 Fix: Log to console
+							logError('Bulk operation partial failures', null, response.data.messages);
 						}
 						
 						alert(msg);
 					} else {
-						alert(response.data.message || umpMM.strings.error);
+						if (!handleAjaxError(response, 'add_membership_bulk')) {
+							alert(response.data.message || umpMM.strings.error);
+						}
 					}
 				},
-				error: function() {
-					$btn.prop('disabled', false).text('Adaugă la Utilizatorii Selectați');
+				error: function(xhr, status, error) {
+					// Bug #6 Fix: Log error details
+					logError('AJAX add_membership_bulk failed', error, {
+						status: status,
+						xhr: xhr,
+						selectedUsers: selectedUsers,
+						membershipId: membershipId
+					});
+					$btn.prop('disabled', false).text(umpMM.strings.addToSelected);
 					alert(umpMM.strings.error);
 				}
 			});
@@ -139,7 +208,7 @@
 			var target = $('#ump-mm-rule-target').val();
 			
 			if (!trigger || !target) {
-				alert('Te rugăm să selectezi ambele memberships.');
+				alert(umpMM.strings.selectBoth);
 				return;
 			}
 			
@@ -156,25 +225,35 @@
 					target: target
 				},
 				success: function(response) {
-					$btn.prop('disabled', false).text('Salvează Regula');
+					$btn.prop('disabled', false).text(umpMM.strings.saveRule);
 					
 					if (response.success) {
 						alert(response.data.message || umpMM.strings.success);
 						location.reload();
 					} else {
-						alert(response.data.message || umpMM.strings.error);
+						if (!handleAjaxError(response, 'save_auto_rule')) {
+							alert(response.data.message || umpMM.strings.error);
+						}
 					}
 				},
-				error: function() {
-					$btn.prop('disabled', false).text('Salvează Regula');
+				error: function(xhr, status, error) {
+					// Bug #6 Fix: Log error details
+					logError('AJAX save_auto_rule failed', error, {
+						status: status,
+						xhr: xhr,
+						trigger: trigger,
+						target: target
+					});
+					$btn.prop('disabled', false).text(umpMM.strings.saveRule);
 					alert(umpMM.strings.error);
 				}
 			});
 		});
 		
+		// Bug #10 Fix: Use more specific selector to prevent memory leaks
 		// Delete auto rule
-		$(document).on('click', '.ump-mm-delete-rule', function() {
-			if (!confirm('Ești sigur că vrei să ștergi această regulă?')) {
+		$('.ump-mm-existing-rules').on('click', '.ump-mm-delete-rule', function() {
+			if (!confirm(umpMM.strings.confirmDelete)) {
 				return;
 			}
 			
@@ -201,10 +280,18 @@
 						});
 					} else {
 						$btn.prop('disabled', false);
-						alert(response.data.message || umpMM.strings.error);
+						if (!handleAjaxError(response, 'delete_auto_rule')) {
+							alert(response.data.message || umpMM.strings.error);
+						}
 					}
 				},
-				error: function() {
+				error: function(xhr, status, error) {
+					// Bug #6 Fix: Log error details
+					logError('AJAX delete_auto_rule failed', error, {
+						status: status,
+						xhr: xhr,
+						ruleId: ruleId
+					});
 					$btn.prop('disabled', false);
 					alert(umpMM.strings.error);
 				}

@@ -78,11 +78,16 @@ class UMP_MM_Helper
     {
         global $wpdb;
 
-        if (! $user_id || ! $membership_id) {
+        // Bug #2 Fix: Strict integer validation
+        if (!is_numeric($user_id) || !is_numeric($membership_id) || $user_id <= 0 || $membership_id <= 0) {
             return false;
         }
 
-        $current_time = current_time('mysql');
+        $user_id = (int) $user_id;
+        $membership_id = (int) $membership_id;
+
+        // Bug #19 Fix: Use consistent timestamp handling
+        $now = current_time('timestamp');
 
         // Check directly in database for an ACTIVE subscription
         $subscription = $wpdb->get_row(
@@ -104,7 +109,6 @@ class UMP_MM_Helper
         }
 
         // Check if subscription is actually active (not expired and started)
-        $now = strtotime($current_time);
 
         // Check start time
         if (! empty($subscription->start_time) && $subscription->start_time !== '0000-00-00 00:00:00') {
@@ -131,19 +135,29 @@ class UMP_MM_Helper
     /**
      * Get users with specific active membership
      * Sorted by membership assignment date (newest first)
+     * Bug #20 Fix: Added pagination support
      *
      * @param int $membership_id Membership ID
-     * @return array Array of user IDs sorted by assignment date (newest first)
+     * @param int $limit Maximum number of results (default 100)
+     * @param int $offset Offset for pagination (default 0)
+     * @return array Array with 'users' (user IDs) and 'total' count
      */
-    public static function get_users_with_membership($membership_id)
+    public static function get_users_with_membership($membership_id, $limit = 100, $offset = 0)
     {
         global $wpdb;
 
-        if (! $membership_id) {
-            return array();
+        // Bug #2 Fix: Strict validation
+        if (!is_numeric($membership_id) || $membership_id <= 0) {
+            return array('users' => array(), 'total' => 0);
         }
 
-        $current_time = current_time('mysql');
+        $membership_id = (int) $membership_id;
+        $limit = max(1, min(500, (int) $limit)); // Max 500 per page
+        $offset = max(0, (int) $offset);
+
+        // Bug #19 Fix: Use timestamp for consistency
+        $now = current_time('timestamp');
+        $current_time_mysql = date('Y-m-d H:i:s', $now);
 
         // Get user IDs with their assignment date and ID (for sorting by newest)
         // Using id field as it increases with time, so higher id = newer assignment
@@ -157,8 +171,8 @@ class UMP_MM_Helper
 				AND (start_time = '0000-00-00 00:00:00' OR start_time <= %s)
 				ORDER BY id DESC",
                 $membership_id,
-                $current_time,
-                $current_time
+                $current_time_mysql,
+                $current_time_mysql
             )
         );
 
@@ -194,25 +208,39 @@ class UMP_MM_Helper
             return strtotime($b['assignment_date']) - strtotime($a['assignment_date']);
         });
 
-        // Return only user IDs in sorted order
-        return array_map(function ($item) {
+        // Bug #20 Fix: Apply pagination
+        $total_count = count($active_users_with_dates);
+        $paginated_users = array_slice($active_users_with_dates, $offset, $limit);
+
+        // Return user IDs in sorted order with total count
+        $user_ids = array_map(function ($item) {
             return $item['user_id'];
-        }, $active_users_with_dates);
+        }, $paginated_users);
+
+        return array(
+            'users' => $user_ids,
+            'total' => $total_count
+        );
     }
 
     /**
      * Add membership to user (only if membership is active)
+     * Bug #14 Fix: Properly documented return types
      *
      * @param int $user_id User ID
      * @param int $membership_id Membership ID
      * @param bool $extend_if_active If true, extend/renew membership even if already active
-     * @return bool|WP_Error Success or error
+     * @return bool|WP_Error True on success, WP_Error on failure
      */
     public static function add_membership_to_user($user_id, $membership_id, $extend_if_active = false)
     {
-        if (! $user_id || ! $membership_id) {
+        // Bug #2 Fix: Strict validation
+        if (!is_numeric($user_id) || !is_numeric($membership_id) || $user_id <= 0 || $membership_id <= 0) {
             return new WP_Error('invalid_params', __('Parametri invalizi.', 'ump-membership-manager'));
         }
+
+        $user_id = (int) $user_id;
+        $membership_id = (int) $membership_id;
 
         // Check if membership is active
         if (! self::is_membership_active($membership_id)) {
@@ -227,8 +255,8 @@ class UMP_MM_Helper
         if ($has_active && ! $extend_if_active) {
             // Double-check: verify subscription is really active by checking dates
             global $wpdb;
-            $current_time = current_time('mysql');
-            $now = strtotime($current_time);
+            // Bug #19 Fix: Use timestamp consistently
+            $now = current_time('timestamp');
 
             $subscription = $wpdb->get_row(
                 $wpdb->prepare(
@@ -273,8 +301,17 @@ class UMP_MM_Helper
         }
         // If $extend_if_active is true, we'll continue to extend/renew the membership
 
+        // Bug #12 Fix: Check if IHC class and methods exist
         if (! class_exists('\Indeed\Ihc\UserSubscriptions')) {
             return new WP_Error('ihc_not_available', __('IHC nu este disponibil.', 'ump-membership-manager'));
+        }
+
+        if (! method_exists('\Indeed\Ihc\UserSubscriptions', 'assign')) {
+            return new WP_Error('ihc_method_missing', __('Metoda IHC assign() nu există.', 'ump-membership-manager'));
+        }
+
+        if (! method_exists('\Indeed\Ihc\UserSubscriptions', 'makeComplete')) {
+            return new WP_Error('ihc_method_missing', __('Metoda IHC makeComplete() nu există.', 'ump-membership-manager'));
         }
 
         // Assign membership

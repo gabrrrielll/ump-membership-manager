@@ -39,6 +39,62 @@ class UMP_MM_Auto_Rules
     }
 
     /**
+     * Bug #3 Fix: Prevent race conditions with locking
+     * Check if rule is currently being processed
+     */
+    private function acquire_lock($user_id, $membership_id, $target_id)
+    {
+        $lock_key = 'ump_mm_lock_' . $user_id . '_' . $membership_id . '_' . $target_id;
+        $lock = get_transient($lock_key);
+        
+        if ($lock) {
+            return false; // Already processing
+        }
+        
+        // Set lock for 30 seconds
+        set_transient($lock_key, true, 30);
+        return true;
+    }
+    
+    /**
+     * Release lock
+     */
+    private function release_lock($user_id, $membership_id, $target_id)
+    {
+        $lock_key = 'ump_mm_lock_' . $user_id . '_' . $membership_id . '_' . $target_id;
+        delete_transient($lock_key);
+    }
+    
+    /**
+     * Bug #3 Fix: Detect circular dependencies
+     */
+    private function check_circular_dependency($trigger_id, $target_id, $checked = array())
+    {
+        // Prevent infinite recursion
+        if (in_array($trigger_id, $checked)) {
+            return true; // Circular dependency found
+        }
+        
+        $checked[] = $trigger_id;
+        $auto_rules = get_option('ump_mm_auto_rules', array());
+        
+        foreach ($auto_rules as $rule) {
+            if ((int) $rule['trigger'] === (int) $target_id) {
+                // target triggers another rule
+                if ((int) $rule['target'] === (int) $trigger_id) {
+                    return true; // Direct circular dependency
+                }
+                // Check further
+                if ($this->check_circular_dependency($trigger_id, (int) $rule['target'], $checked)) {
+                    return true;
+                }
+            }
+        }
+        
+        return false;
+    }
+
+    /**
      * Handle subscription activation
      *
      * @param int $user_id User ID
@@ -70,6 +126,27 @@ class UMP_MM_Auto_Rules
             if ((int) $rule['trigger'] === (int) $membership_id) {
                 $target_membership_id = (int) $rule['target'];
 
+                // Bug #3 Fix: Try to acquire lock
+                if (!$this->acquire_lock($user_id, $membership_id, $target_membership_id)) {
+                    error_log(sprintf(
+                        'UMP MM: Skipped auto rule for user %d - already being processed (lock active)',
+                        $user_id
+                    ));
+                    continue;
+                }
+
+                // Bug #3 Fix: Check for circular dependencies
+                if ($this->check_circular_dependency($membership_id, $target_membership_id)) {
+                    error_log(sprintf(
+                        'UMP MM: Skipped auto rule for user %d - circular dependency detected between %d and %d',
+                        $user_id,
+                        $membership_id,
+                        $target_membership_id
+                    ));
+                    $this->release_lock($user_id, $membership_id, $target_membership_id);
+                    continue;
+                }
+
                 // Verify target membership is active
                 if (! UMP_MM_Helper::is_membership_active($target_membership_id)) {
                     // Log that we skipped because target is inactive
@@ -78,6 +155,7 @@ class UMP_MM_Auto_Rules
                         $user_id,
                         $target_membership_id
                     ));
+                    $this->release_lock($user_id, $membership_id, $target_membership_id);
                     continue;
                 }
 
@@ -103,6 +181,9 @@ class UMP_MM_Auto_Rules
                         $membership_id
                     ));
                 }
+
+                // Release lock
+                $this->release_lock($user_id, $membership_id, $target_membership_id);
             }
         }
     }

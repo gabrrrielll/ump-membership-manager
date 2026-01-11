@@ -135,6 +135,14 @@ class UMP_MM_Admin
                     'error'        => __('Eroare!', 'ump-membership-manager'),
                     'selectUsers'  => __('Te rugăm să selectezi cel puțin un utilizator.', 'ump-membership-manager'),
                     'selectMembership' => __('Te rugăm să selectezi un membership.', 'ump-membership-manager'),
+                    // Bug #5 Fix: Add localized button texts
+                    'searchUsers'  => __('Caută Utilizatori', 'ump-membership-manager'),
+                    'addToSelected' => __('Adaugă la Utilizatorii Selectați', 'ump-membership-manager'),
+                    'saveRule'     => __('Salvează Regula', 'ump-membership-manager'),
+                    'selectBoth'   => __('Te rugăm să selectezi ambele memberships.', 'ump-membership-manager'),
+                    'confirmBulk'  => __('Ești sigur că vrei să adaugi acest membership la %d utilizatori selectați?', 'ump-membership-manager'),
+                    'confirmDelete' => __('Ești sigur că vrei să ștergi această regulă?', 'ump-membership-manager'),
+                    'sessionExpired' => __('Sesiunea ta a expirat. Pagina va fi reîncărcată.', 'ump-membership-manager'),
                 ),
             )
         );
@@ -150,16 +158,19 @@ class UMP_MM_Admin
             wp_die(__('Nu ai permisiuni suficiente pentru a accesa această pagină.', 'ump-membership-manager'));
         }
 
-        $active_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'search';
+        // Bug #1 Fix: Whitelist validation for tab parameter to prevent XSS
+        $allowed_tabs = array('search', 'auto-rules');
+        $requested_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'search';
+        $active_tab = in_array($requested_tab, $allowed_tabs, true) ? $requested_tab : 'search';
         ?>
 		<div class="wrap ump-mm-admin-wrap">
 			<h1><?php esc_html_e('UMP Membership Manager', 'ump-membership-manager'); ?></h1>
 			
 			<nav class="nav-tab-wrapper">
-				<a href="?page=ump-membership-manager&tab=search" class="nav-tab <?php echo 'search' === $active_tab ? 'nav-tab-active' : ''; ?>">
+				<a href="<?php echo esc_url(admin_url('admin.php?page=ump-membership-manager&tab=search')); ?>" class="nav-tab <?php echo 'search' === $active_tab ? 'nav-tab-active' : ''; ?>">
 					<?php esc_html_e('Căutare și Gestionare', 'ump-membership-manager'); ?>
 				</a>
-				<a href="?page=ump-membership-manager&tab=auto-rules" class="nav-tab <?php echo 'auto-rules' === $active_tab ? 'nav-tab-active' : ''; ?>">
+				<a href="<?php echo esc_url(admin_url('admin.php?page=ump-membership-manager&tab=auto-rules')); ?>" class="nav-tab <?php echo 'auto-rules' === $active_tab ? 'nav-tab-active' : ''; ?>">
 					<?php esc_html_e('Reguli Automate', 'ump-membership-manager'); ?>
 				</a>
 			</nav>
@@ -183,6 +194,19 @@ class UMP_MM_Admin
     private function render_search_tab()
     {
         $memberships = UMP_MM_Helper::get_active_memberships();
+        
+        // Bug #7 Fix: Check for empty membership lists
+        if (empty($memberships)) {
+            ?>
+			<div class="ump-mm-search-section">
+				<h2><?php esc_html_e('Căutare Utilizatori după Membership', 'ump-membership-manager'); ?></h2>
+				<div class="notice notice-warning">
+					<p><?php esc_html_e('Nu există memberships active configurate în Indeed Ultimate Membership Pro. Te rugăm să creezi și să activezi cel puțin un membership pentru a putea folosi această funcționalitate.', 'ump-membership-manager'); ?></p>
+				</div>
+			</div>
+			<?php
+            return;
+        }
         ?>
 		<div class="ump-mm-search-section">
 			<h2><?php esc_html_e('Căutare Utilizatori după Membership', 'ump-membership-manager'); ?></h2>
@@ -256,6 +280,19 @@ class UMP_MM_Admin
     {
         $auto_rules = get_option('ump_mm_auto_rules', array());
         $memberships = UMP_MM_Helper::get_active_memberships();
+        
+        // Bug #7 Fix: Check for empty membership lists
+        if (empty($memberships)) {
+            ?>
+			<div class="ump-mm-auto-rules-section">
+				<h2><?php esc_html_e('Reguli Automate de Atribuire', 'ump-membership-manager'); ?></h2>
+				<div class="notice notice-warning">
+					<p><?php esc_html_e('Nu există memberships active configurate în Indeed Ultimate Membership Pro. Te rugăm să creezi și să activezi cel puțin două memberships pentru a putea configura reguli automate.', 'ump-membership-manager'); ?></p>
+				</div>
+			</div>
+			<?php
+            return;
+        }
         ?>
 		<div class="ump-mm-auto-rules-section">
 			<h2><?php esc_html_e('Reguli Automate de Atribuire', 'ump-membership-manager'); ?></h2>
@@ -316,8 +353,11 @@ class UMP_MM_Admin
 						<tbody>
 							<?php foreach ($auto_rules as $rule_id => $rule) : ?>
 								<?php
-                                $trigger_label = isset($memberships[ $rule['trigger'] ]) ? $memberships[ $rule['trigger'] ]['label'] : 'N/A';
-							    $target_label = isset($memberships[ $rule['target'] ]) ? $memberships[ $rule['target'] ]['label'] : 'N/A';
+                                // Bug #13 Fix: Check nested array keys
+                $trigger_label = (isset($memberships[$rule['trigger']]) && isset($memberships[$rule['trigger']]['label'])) 
+                    ? $memberships[$rule['trigger']]['label'] : 'N/A';
+							    $target_label = (isset($memberships[$rule['target']]) && isset($memberships[$rule['target']]['label'])) 
+                    ? $memberships[$rule['target']]['label'] : 'N/A';
 							    ?>
 								<tr>
 									<td><?php echo esc_html($trigger_label); ?></td>
@@ -338,28 +378,75 @@ class UMP_MM_Admin
     }
 
     /**
+     * Check rate limiting for AJAX requests
+     * Bug #16 Fix: Add rate limiting
+     */
+    private function check_rate_limit($action)
+    {
+        $user_id = get_current_user_id();
+        $transient_key = 'ump_mm_rate_limit_' . $user_id . '_' . $action;
+        $requests = get_transient($transient_key);
+        
+        if (false === $requests) {
+            $requests = 0;
+        }
+        
+        // Allow 30 requests per minute
+        if ($requests >= 30) {
+            return false;
+        }
+        
+        set_transient($transient_key, $requests + 1, 60);
+        return true;
+    }
+
+    /**
      * AJAX: Search users
      */
     public function ajax_search_users()
     {
-        check_ajax_referer('ump_mm_nonce', 'nonce');
+        // Bug #4 Fix: Better nonce error handling
+        $nonce_check = check_ajax_referer('ump_mm_nonce', 'nonce', false);
+        if (!$nonce_check) {
+            wp_send_json_error(array(
+                'message' => __('Sesiunea ta a expirat. Te rugăm să reîncarci pagina.', 'ump-membership-manager'),
+                'code' => 'nonce_expired'
+            ));
+        }
 
         if (! current_user_can('manage_options')) {
             wp_send_json_error(array( 'message' => __('Nu ai permisiuni suficiente.', 'ump-membership-manager') ));
         }
 
+        // Bug #16 Fix: Rate limiting
+        if (!$this->check_rate_limit('search_users')) {
+            wp_send_json_error(array(
+                'message' => __('Prea multe cereri. Te rugăm să aștepți un minut.', 'ump-membership-manager'),
+                'code' => 'rate_limit_exceeded'
+            ));
+        }
+
         $membership_id = isset($_POST['membership_id']) ? intval($_POST['membership_id']) : 0;
+        
+        // Bug #2 Fix: Strict validation
+        if ($membership_id <= 0) {
+            wp_send_json_error(array( 'message' => __('ID Membership invalid.', 'ump-membership-manager') ));
+        }
 
         if (! $membership_id) {
             wp_send_json_error(array( 'message' => __('Membership ID invalid.', 'ump-membership-manager') ));
         }
 
-        $user_ids = UMP_MM_Helper::get_users_with_membership($membership_id);
+        // Bug #20 Fix: Use pagination (get first 100 users)
+        $result = UMP_MM_Helper::get_users_with_membership($membership_id, 100, 0);
+        $user_ids = $result['users'];
+        $total = $result['total'];
 
         if (empty($user_ids)) {
             wp_send_json_success(array(
                 'users' => array(),
                 'count' => 0,
+                'total' => 0,
             ));
         }
 
@@ -379,6 +466,7 @@ class UMP_MM_Admin
         wp_send_json_success(array(
             'users' => $users_data,
             'count' => count($users_data),
+            'total' => $total,
         ));
     }
 
@@ -387,14 +475,34 @@ class UMP_MM_Admin
      */
     public function ajax_add_membership_bulk()
     {
-        check_ajax_referer('ump_mm_nonce', 'nonce');
+        // Bug #4 Fix: Better nonce error handling
+        $nonce_check = check_ajax_referer('ump_mm_nonce', 'nonce', false);
+        if (!$nonce_check) {
+            wp_send_json_error(array(
+                'message' => __('Sesiunea ta a expirat. Te rugăm să reîncarci pagina.', 'ump-membership-manager'),
+                'code' => 'nonce_expired'
+            ));
+        }
 
         if (! current_user_can('manage_options')) {
             wp_send_json_error(array( 'message' => __('Nu ai permisiuni suficiente.', 'ump-membership-manager') ));
         }
 
+        // Bug #16 Fix: Rate limiting
+        if (!$this->check_rate_limit('add_membership_bulk')) {
+            wp_send_json_error(array(
+                'message' => __('Prea multe cereri. Te rugăm să aștepți un minut.', 'ump-membership-manager'),
+                'code' => 'rate_limit_exceeded'
+            ));
+        }
+
         $user_ids = isset($_POST['user_ids']) ? array_map('intval', $_POST['user_ids']) : array();
         $membership_id = isset($_POST['membership_id']) ? intval($_POST['membership_id']) : 0;
+        
+        // Bug #2 Fix: Strict validation
+        if ($membership_id <= 0) {
+            wp_send_json_error(array( 'message' => __('ID Membership invalid.', 'ump-membership-manager') ));
+        }
 
         if (empty($user_ids)) {
             wp_send_json_error(array( 'message' => __('Nu ai selectat utilizatori.', 'ump-membership-manager') ));
@@ -429,8 +537,9 @@ class UMP_MM_Admin
                 $error_message = $result->get_error_message();
                 $error_code = $result->get_error_code();
                 
+                // Bug #8 Fix: Translate error message format to Romanian
                 $results['messages'][] = sprintf(
-                    __('User %s (ID: %d): %s [Code: %s]', 'ump-membership-manager'),
+                    __('Utilizator %s (ID: %d): %s [Cod eroare: %s]', 'ump-membership-manager'),
                     $user ? $user->user_login : 'N/A',
                     $user_id,
                     $error_message,
@@ -458,14 +567,34 @@ class UMP_MM_Admin
      */
     public function ajax_save_auto_rule()
     {
-        check_ajax_referer('ump_mm_nonce', 'nonce');
+        // Bug #4 Fix: Better nonce error handling
+        $nonce_check = check_ajax_referer('ump_mm_nonce', 'nonce', false);
+        if (!$nonce_check) {
+            wp_send_json_error(array(
+                'message' => __('Sesiunea ta a expirat. Te rugăm să reîncarci pagina.', 'ump-membership-manager'),
+                'code' => 'nonce_expired'
+            ));
+        }
 
         if (! current_user_can('manage_options')) {
             wp_send_json_error(array( 'message' => __('Nu ai permisiuni suficiente.', 'ump-membership-manager') ));
         }
 
+        // Bug #16 Fix: Rate limiting
+        if (!$this->check_rate_limit('save_auto_rule')) {
+            wp_send_json_error(array(
+                'message' => __('Prea multe cereri. Te rugăm să aștepți un minut.', 'ump-membership-manager'),
+                'code' => 'rate_limit_exceeded'
+            ));
+        }
+
         $trigger = isset($_POST['trigger']) ? intval($_POST['trigger']) : 0;
         $target = isset($_POST['target']) ? intval($_POST['target']) : 0;
+        
+        // Bug #2 Fix: Strict validation
+        if ($trigger <= 0 || $target <= 0) {
+            wp_send_json_error(array( 'message' => __('Parametri invalizi.', 'ump-membership-manager') ));
+        }
 
         if (! $trigger || ! $target) {
             wp_send_json_error(array( 'message' => __('Parametri invalizi.', 'ump-membership-manager') ));
@@ -506,10 +635,25 @@ class UMP_MM_Admin
      */
     public function ajax_delete_auto_rule()
     {
-        check_ajax_referer('ump_mm_nonce', 'nonce');
+        // Bug #4 Fix: Better nonce error handling
+        $nonce_check = check_ajax_referer('ump_mm_nonce', 'nonce', false);
+        if (!$nonce_check) {
+            wp_send_json_error(array(
+                'message' => __('Sesiunea ta a expirat. Te rugăm să reîncarci pagina.', 'ump-membership-manager'),
+                'code' => 'nonce_expired'
+            ));
+        }
 
         if (! current_user_can('manage_options')) {
             wp_send_json_error(array( 'message' => __('Nu ai permisiuni suficiente.', 'ump-membership-manager') ));
+        }
+
+        // Bug #16 Fix: Rate limiting
+        if (!$this->check_rate_limit('delete_auto_rule')) {
+            wp_send_json_error(array(
+                'message' => __('Prea multe cereri. Te rugăm să aștepți un minut.', 'ump-membership-manager'),
+                'code' => 'rate_limit_exceeded'
+            ));
         }
 
         $rule_id = isset($_POST['rule_id']) ? sanitize_text_field($_POST['rule_id']) : '';
