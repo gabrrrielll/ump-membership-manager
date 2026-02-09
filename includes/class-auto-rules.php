@@ -34,8 +34,10 @@ class UMP_MM_Auto_Rules
      */
     private function __construct()
     {
-        // Hook into IHC subscription activation
+        // Hook into IHC subscription activation (various hooks for different IHC versions/scenarios)
         add_action('ihc_action_after_subscription_activated', array( $this, 'handle_subscription_activated' ), 10, 4);
+        add_action('ihc_action_after_subscription_first_time_activated', array( $this, 'handle_subscription_activated_3_params' ), 10, 3);
+        add_action('ihc_action_after_subscription_renew_activated', array( $this, 'handle_subscription_activated_3_params' ), 10, 3);
     }
 
     /**
@@ -95,11 +97,21 @@ class UMP_MM_Auto_Rules
     }
 
     /**
+     * Wrapper for hooks with 3 parameters
+     */
+    public function handle_subscription_activated_3_params($user_id, $membership_id, $args)
+    {
+        // For first time or renew hooks, we can infer the state or just pass it as true/false
+        // but handle_subscription_activated check user_has_active_membership anyway
+        $this->handle_subscription_activated($user_id, $membership_id, null, $args);
+    }
+
+    /**
      * Handle subscription activation
      *
      * @param int $user_id User ID
      * @param int $membership_id Membership ID that was activated
-     * @param bool $first_time Is this first time activation
+     * @param bool|null $first_time Is this first time activation (can be null if unknown)
      * @param array $args Additional arguments
      */
     public function handle_subscription_activated($user_id, $membership_id, $first_time, $args)

@@ -33,9 +33,12 @@ class UMP_MM_Admin
      */
     private function __construct()
     {
-        // Use priority 99 to ensure IHC menu is registered first
-        add_action('admin_menu', array( $this, 'add_admin_menu' ), 99);
+        // Use very high priority to ensure IHC menu is registered first
+        add_action('admin_menu', array( $this, 'add_admin_menu' ), 999);
         add_action('admin_enqueue_scripts', array( $this, 'enqueue_scripts' ));
+
+        // Add settings link to plugins page
+        add_filter('plugin_action_links_' . UMP_MM_BASENAME, array( $this, 'add_settings_link' ));
 
         // AJAX handlers
         add_action('wp_ajax_ump_mm_search_users', array( $this, 'ajax_search_users' ));
@@ -58,7 +61,7 @@ class UMP_MM_Admin
         global $submenu;
         $ihc_menu_exists = false;
 
-        if (isset($submenu['ihc_manage'])) {
+        if (isset($submenu['ihc_manage']) || (defined('IHC_PATH') && class_exists('\Indeed\Ihc\Db\Memberships'))) {
             $ihc_menu_exists = true;
         }
 
@@ -87,6 +90,19 @@ class UMP_MM_Admin
     }
 
     /**
+     * Add settings link to plugins page
+     * 
+     * @param array $links Existing links
+     * @return array Modified links
+     */
+    public function add_settings_link($links)
+    {
+        $settings_link = '<a href="' . admin_url('admin.php?page=ump-membership-manager') . '">' . __('Setări', 'ump-membership-manager') . '</a>';
+        array_unshift($links, $settings_link);
+        return $links;
+    }
+
+    /**
      * Enqueue scripts and styles
      */
     public function enqueue_scripts($hook)
@@ -96,6 +112,7 @@ class UMP_MM_Admin
             'ultimate-membership-pro_page_ump-membership-manager',
             'toplevel_page_ump-membership-manager',
             'ihc_page_ump-membership-manager',
+            'ihc_manage_page_ump-membership-manager',
         );
 
         if (! in_array($hook, $valid_hooks, true) && strpos($hook, 'ump-membership-manager') === false) {

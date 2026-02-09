@@ -35,3 +35,6 @@ Thumbs.db
 dist/
 build/
 
+# Temp plugins for reference
+temp_plugins/
+

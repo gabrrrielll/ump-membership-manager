@@ -20,7 +20,7 @@ if (! defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('UMP_MM_VERSION', '1.0.0');
+define('UMP_MM_VERSION', '1.1.0');
 define('UMP_MM_PATH', plugin_dir_path(__FILE__));
 define('UMP_MM_URL', plugin_dir_url(__FILE__));
 define('UMP_MM_BASENAME', plugin_basename(__FILE__));
