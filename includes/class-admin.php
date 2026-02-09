@@ -35,7 +35,7 @@ class UMP_MM_Admin
     {
         // Use very high priority to ensure IHC menu is registered first
         add_action('admin_menu', array( $this, 'add_admin_menu' ), 999);
-        add_action('admin_enqueue_scripts', array( $this, 'enqueue_scripts' ));
+        add_action('admin_head', array( $this, 'load_inline_assets' ));
 
         // Add settings link to plugins page
         add_filter('plugin_action_links_' . UMP_MM_BASENAME, array( $this, 'add_settings_link' ));
@@ -103,10 +103,12 @@ class UMP_MM_Admin
     }
 
     /**
-     * Enqueue scripts and styles
+     * Load JS and CSS inline to avoid loading issues on some servers
      */
-    public function enqueue_scripts($hook)
+    public function load_inline_assets()
     {
+        global $hook_suffix;
+
         // Check if this is our admin page (various possible hook formats)
         $valid_hooks = array(
             'ultimate-membership-pro_page_ump-membership-manager',
@@ -115,7 +117,15 @@ class UMP_MM_Admin
             'ihc_manage_page_ump-membership-manager',
         );
 
-        if (! in_array($hook, $valid_hooks, true) && strpos($hook, 'ump-membership-manager') === false) {
+        $is_valid = false;
+        foreach ($valid_hooks as $valid_hook) {
+            if ($hook_suffix === $valid_hook) {
+                $is_valid = true;
+                break;
+            }
+        }
+
+        if (!$is_valid && strpos($hook_suffix, 'ump-membership-manager') === false) {
             return;
         }
 
@@ -124,25 +134,21 @@ class UMP_MM_Admin
             return;
         }
 
-        wp_enqueue_script(
-            'ump-membership-manager-admin',
-            UMP_MM_URL . 'assets/admin.js',
-            array( 'jquery' ),
-            UMP_MM_VERSION,
-            true
-        );
+        // CSS
+        $css_path = UMP_MM_PATH . 'assets/admin.css';
+        if (file_exists($css_path)) {
+            echo '<style id="ump-mm-admin-css">';
+            echo file_get_contents($css_path);
+            echo '</style>';
+        }
 
-        wp_enqueue_style(
-            'ump-membership-manager-admin',
-            UMP_MM_URL . 'assets/admin.css',
-            array(),
-            UMP_MM_VERSION
-        );
-
-        wp_localize_script(
-            'ump-membership-manager-admin',
-            'umpMM',
-            array(
+        // JS
+        $js_path = UMP_MM_PATH . 'assets/admin.js';
+        if (file_exists($js_path)) {
+            echo '<script id="ump-mm-admin-js">';
+            
+            // Manual localization
+            $ump_mm_data = array(
                 'ajaxUrl' => admin_url('admin-ajax.php'),
                 'nonce'   => wp_create_nonce('ump_mm_nonce'),
                 'strings' => array(
@@ -152,17 +158,22 @@ class UMP_MM_Admin
                     'error'        => __('Eroare!', 'ump-membership-manager'),
                     'selectUsers'  => __('Te rugăm să selectezi cel puțin un utilizator.', 'ump-membership-manager'),
                     'selectMembership' => __('Te rugăm să selectezi un membership.', 'ump-membership-manager'),
-                    // Bug #5 Fix: Add localized button texts
                     'searchUsers'  => __('Caută Utilizatori', 'ump-membership-manager'),
                     'addToSelected' => __('Adaugă la Utilizatorii Selectați', 'ump-membership-manager'),
                     'saveRule'     => __('Salvează Regula', 'ump-membership-manager'),
                     'selectBoth'   => __('Te rugăm să selectezi ambele memberships.', 'ump-membership-manager'),
                     'confirmBulk'  => __('Ești sigur că vrei să adaugi acest membership la %d utilizatori selectați?', 'ump-membership-manager'),
+                    'ruleSaved'    => __('Regula a fost salvată cu succes.', 'ump-membership-manager'),
+                    'ruleDeleted'  => __('Regula a fost ștearsă.', 'ump-membership-manager'),
                     'confirmDelete' => __('Ești sigur că vrei să ștergi această regulă?', 'ump-membership-manager'),
                     'sessionExpired' => __('Sesiunea ta a expirat. Pagina va fi reîncărcată.', 'ump-membership-manager'),
-                ),
-            )
-        );
+                )
+            );
+            echo 'var umpMM = ' . json_encode($ump_mm_data) . ';';
+
+            echo file_get_contents($js_path);
+            echo '</script>';
+        }
     }
 
     /**
