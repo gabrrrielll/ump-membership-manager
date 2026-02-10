@@ -38,6 +38,9 @@ class UMP_MM_Auto_Rules
         add_action('ihc_action_after_subscription_activated', array( $this, 'handle_subscription_activated' ), 10, 4);
         add_action('ihc_action_after_subscription_first_time_activated', array( $this, 'handle_subscription_activated_3_params' ), 10, 3);
         add_action('ihc_action_after_subscription_renew_activated', array( $this, 'handle_subscription_activated_3_params' ), 10, 3);
+
+        // WooCommerce status mapping
+        add_action('woocommerce_order_status_changed', array( $this, 'handle_wc_order_status_changed' ), 10, 4);
     }
 
     /**
@@ -196,6 +199,46 @@ class UMP_MM_Auto_Rules
 
                 // Release lock
                 $this->release_lock($user_id, $membership_id, $target_membership_id);
+            }
+        }
+    }
+
+    /**
+     * Handle WooCommerce order status change
+     *
+     * @param int    $order_id Order ID
+     * @param string $from     Old status
+     * @param string $to       New status
+     * @param object $order    Order object
+     */
+    public function handle_wc_order_status_changed($order_id, $from, $to, $order)
+    {
+        // Get mapping setting
+        $mapping = get_option('ump_mm_wc_status_mapping', array());
+
+        if (empty($mapping['source']) || empty($mapping['target'])) {
+            return;
+        }
+
+        // Clean status slugs (remove 'wc-' prefix if present, though hooks usually don't have it)
+        $source_status = str_replace('wc-', '', $mapping['source']);
+        $target_status = str_replace('wc-', '', $mapping['target']);
+        $current_to = str_replace('wc-', '', $to);
+
+        // Check if current new status matches source status
+        if ($current_to === $source_status) {
+            // Change status to target status
+            // We use a small delay or check to avoid infinite loops if source == target (already handled in save)
+            if ($source_status !== $target_status) {
+                $order->update_status($target_status, __('Status modificat automat prin UMP Membership Manager.', 'ump-membership-manager'));
+                
+                error_log(sprintf(
+                    'UMP MM: Order %d status automatically changed from %s to %s (Mapped from %s)',
+                    $order_id,
+                    $from,
+                    $target_status,
+                    $source_status
+                ));
             }
         }
     }

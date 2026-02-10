@@ -337,4 +337,17 @@ class UMP_MM_Helper
 
         return true;
     }
+    /**
+     * Get WooCommerce order statuses
+     *
+     * @return array Array of status slug => label
+     */
+    public static function get_wc_order_statuses()
+    {
+        if (! function_exists('wc_get_order_statuses')) {
+            return array();
+        }
+
+        return wc_get_order_statuses();
+    }
 }

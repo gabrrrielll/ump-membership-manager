@@ -45,6 +45,7 @@ class UMP_MM_Admin
         add_action('wp_ajax_ump_mm_add_membership_bulk', array( $this, 'ajax_add_membership_bulk' ));
         add_action('wp_ajax_ump_mm_save_auto_rule', array( $this, 'ajax_save_auto_rule' ));
         add_action('wp_ajax_ump_mm_delete_auto_rule', array( $this, 'ajax_delete_auto_rule' ));
+        add_action('wp_ajax_ump_mm_save_wc_status_mapping', array( $this, 'ajax_save_wc_status_mapping' ));
     }
 
     /**
@@ -167,6 +168,8 @@ class UMP_MM_Admin
                     'ruleDeleted'  => __('Regula a fost ștearsă.', 'ump-membership-manager'),
                     'confirmDelete' => __('Ești sigur că vrei să ștergi această regulă?', 'ump-membership-manager'),
                     'sessionExpired' => __('Sesiunea ta a expirat. Pagina va fi reîncărcată.', 'ump-membership-manager'),
+                    'mappingSaved' => __('Maparea de status a fost salvată.', 'ump-membership-manager'),
+                    'selectStatuses' => __('Te rugăm să selectezi ambele statusuri.', 'ump-membership-manager'),
                 )
             );
             echo 'var umpMM = ' . json_encode($ump_mm_data) . ';';
@@ -187,7 +190,7 @@ class UMP_MM_Admin
         }
 
         // Bug #1 Fix: Whitelist validation for tab parameter to prevent XSS
-        $allowed_tabs = array('search', 'auto-rules');
+        $allowed_tabs = array('search', 'auto-rules', 'wc-status-mapping');
         $requested_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'search';
         $active_tab = in_array($requested_tab, $allowed_tabs, true) ? $requested_tab : 'search';
         ?>
@@ -201,6 +204,9 @@ class UMP_MM_Admin
 				<a href="<?php echo esc_url(admin_url('admin.php?page=ump-membership-manager&tab=auto-rules')); ?>" class="nav-tab <?php echo 'auto-rules' === $active_tab ? 'nav-tab-active' : ''; ?>">
 					<?php esc_html_e('Reguli Automate', 'ump-membership-manager'); ?>
 				</a>
+				<a href="<?php echo esc_url(admin_url('admin.php?page=ump-membership-manager&tab=wc-status-mapping')); ?>" class="nav-tab <?php echo 'wc-status-mapping' === $active_tab ? 'nav-tab-active' : ''; ?>">
+					<?php esc_html_e('Mapping Status WC', 'ump-membership-manager'); ?>
+				</a>
 			</nav>
 			
 			<div class="ump-mm-tab-content">
@@ -209,6 +215,8 @@ class UMP_MM_Admin
                     $this->render_search_tab();
                 } elseif ('auto-rules' === $active_tab) {
                     $this->render_auto_rules_tab();
+                } elseif ('wc-status-mapping' === $active_tab) {
+                    $this->render_wc_status_mapping_tab();
                 }
         ?>
 			</div>
@@ -699,5 +707,103 @@ class UMP_MM_Admin
         } else {
             wp_send_json_error(array( 'message' => __('Regula nu a fost găsită.', 'ump-membership-manager') ));
         }
+    }
+    /**
+     * Render WooCommerce status mapping tab
+     */
+    private function render_wc_status_mapping_tab()
+    {
+        $mapping = get_option('ump_mm_wc_status_mapping', array(
+            'source' => '',
+            'target' => '',
+        ));
+        $statuses = UMP_MM_Helper::get_wc_order_statuses();
+        
+        if (empty($statuses)) {
+            ?>
+			<div class="ump-mm-wc-mapping-section">
+				<h2><?php esc_html_e('Mapping Status Comandă WooCommerce', 'ump-membership-manager'); ?></h2>
+				<div class="notice notice-warning">
+					<p><?php esc_html_e('WooCommerce nu pare să fie instalat sau activat.', 'ump-membership-manager'); ?></p>
+				</div>
+			</div>
+			<?php
+            return;
+        }
+        ?>
+		<div class="ump-mm-wc-mapping-section">
+			<h2><?php esc_html_e('Mapping Status Comandă WooCommerce', 'ump-membership-manager'); ?></h2>
+			<p class="description">
+				<?php esc_html_e('Configurează o regulă pentru a schimba automat statusul unei comenzi când acesta devine cel selectat în "Stare Sursă".', 'ump-membership-manager'); ?>
+			</p>
+			
+			<div class="ump-mm-wc-mapping-form">
+				<div class="ump-mm-rule-field">
+					<label for="ump-mm-wc-source-status">
+						<?php esc_html_e('Stare Sursă:', 'ump-membership-manager'); ?>
+					</label>
+					<select id="ump-mm-wc-source-status" class="ump-mm-select">
+						<option value=""><?php esc_html_e('-- Selectează Status --', 'ump-membership-manager'); ?></option>
+						<?php foreach ($statuses as $slug => $label) : ?>
+							<option value="<?php echo esc_attr($slug); ?>" <?php selected($mapping['source'], $slug); ?>>
+								<?php echo esc_html($label); ?>
+							</option>
+						<?php endforeach; ?>
+					</select>
+				</div>
+				
+				<div class="ump-mm-rule-field">
+					<label for="ump-mm-wc-target-status">
+						<?php esc_html_e('Stare Destinație:', 'ump-membership-manager'); ?>
+					</label>
+					<select id="ump-mm-wc-target-status" class="ump-mm-select">
+						<option value=""><?php esc_html_e('-- Selectează Status --', 'ump-membership-manager'); ?></option>
+						<?php foreach ($statuses as $slug => $label) : ?>
+							<option value="<?php echo esc_attr($slug); ?>" <?php selected($mapping['target'], $slug); ?>>
+								<?php echo esc_html($label); ?>
+							</option>
+						<?php endforeach; ?>
+					</select>
+				</div>
+				
+				<button type="button" id="ump-mm-save-wc-mapping-btn" class="button button-primary">
+					<?php esc_html_e('Salvează Maparea', 'ump-membership-manager'); ?>
+				</button>
+			</div>
+		</div>
+		<?php
+    }
+
+    /**
+     * AJAX: Save WooCommerce status mapping
+     */
+    public function ajax_save_wc_status_mapping()
+    {
+        $nonce_check = check_ajax_referer('ump_mm_nonce', 'nonce', false);
+        if (!$nonce_check) {
+            wp_send_json_error(array('message' => __('Sesiunea ta a expirat.', 'ump-membership-manager')));
+        }
+
+        if (! current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => __('Nu ai permisiuni suficiente.', 'ump-membership-manager')));
+        }
+
+        $source = isset($_POST['source']) ? sanitize_text_field($_POST['source']) : '';
+        $target = isset($_POST['target']) ? sanitize_text_field($_POST['target']) : '';
+
+        if (empty($source) || empty($target)) {
+            wp_send_json_error(array('message' => __('Te rugăm să selectezi ambele statusuri.', 'ump-membership-manager')));
+        }
+
+        if ($source === $target) {
+            wp_send_json_error(array('message' => __('Statusul sursă și cel destinație nu pot fi identice.', 'ump-membership-manager')));
+        }
+
+        update_option('ump_mm_wc_status_mapping', array(
+            'source' => $source,
+            'target' => $target,
+        ));
+
+        wp_send_json_success(array('message' => __('Maparea de status a fost salvată.', 'ump-membership-manager')));
     }
 }
