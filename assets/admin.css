@@ -77,3 +77,43 @@
 	margin-bottom: 20px;
 }
 
+.ump-mm-reset-password-section {
+	margin-top: 20px;
+}
+
+.ump-mm-reset-password-form {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 10px;
+	margin: 20px 0;
+	padding: 15px;
+	background: #fff;
+	border: 1px solid #ccc;
+	border-radius: 4px;
+}
+
+.ump-mm-reset-password-form label {
+	font-weight: 600;
+	white-space: nowrap;
+}
+
+.ump-mm-reset-password-form input[type="email"] {
+	flex: 1 1 200px;
+	min-width: 0;
+}
+
+@media (max-width: 600px) {
+	.ump-mm-reset-password-form {
+		flex-direction: column;
+		align-items: stretch;
+	}
+
+	.ump-mm-reset-password-form label,
+	.ump-mm-reset-password-form input[type="email"],
+	.ump-mm-reset-password-form .button {
+		width: 100%;
+		box-sizing: border-box;
+	}
+}
+

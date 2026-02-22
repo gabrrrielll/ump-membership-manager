@@ -46,6 +46,7 @@ class UMP_MM_Admin
         add_action('wp_ajax_ump_mm_save_auto_rule', array( $this, 'ajax_save_auto_rule' ));
         add_action('wp_ajax_ump_mm_delete_auto_rule', array( $this, 'ajax_delete_auto_rule' ));
         add_action('wp_ajax_ump_mm_save_wc_status_mapping', array( $this, 'ajax_save_wc_status_mapping' ));
+        add_action('wp_ajax_ump_mm_reset_password', array( $this, 'ajax_reset_password' ));
     }
 
     /**
@@ -170,6 +171,9 @@ class UMP_MM_Admin
                     'sessionExpired' => __('Sesiunea ta a expirat. Pagina va fi reîncărcată.', 'ump-membership-manager'),
                     'mappingSaved' => __('Maparea de status a fost salvată.', 'ump-membership-manager'),
                     'selectStatuses' => __('Te rugăm să selectezi ambele statusuri.', 'ump-membership-manager'),
+                    'resetPassword'  => __('Resetează Parola', 'ump-membership-manager'),
+                    'resetSuccess'   => __('Parola a fost resetată cu succes. Noua parolă este adresa de email a utilizatorului.', 'ump-membership-manager'),
+                    'enterEmail'     => __('Te rugăm să introduci adresa de email.', 'ump-membership-manager'),
                 )
             );
             echo 'var umpMM = ' . json_encode($ump_mm_data) . ';';
@@ -190,7 +194,7 @@ class UMP_MM_Admin
         }
 
         // Bug #1 Fix: Whitelist validation for tab parameter to prevent XSS
-        $allowed_tabs = array('search', 'auto-rules', 'wc-status-mapping');
+        $allowed_tabs = array('search', 'auto-rules', 'wc-status-mapping', 'reset-password');
         $requested_tab = isset($_GET['tab']) ? sanitize_text_field($_GET['tab']) : 'search';
         $active_tab = in_array($requested_tab, $allowed_tabs, true) ? $requested_tab : 'search';
         ?>
@@ -207,6 +211,9 @@ class UMP_MM_Admin
 				<a href="<?php echo esc_url(admin_url('admin.php?page=ump-membership-manager&tab=wc-status-mapping')); ?>" class="nav-tab <?php echo 'wc-status-mapping' === $active_tab ? 'nav-tab-active' : ''; ?>">
 					<?php esc_html_e('Mapping Status WC', 'ump-membership-manager'); ?>
 				</a>
+				<a href="<?php echo esc_url(admin_url('admin.php?page=ump-membership-manager&tab=reset-password')); ?>" class="nav-tab <?php echo 'reset-password' === $active_tab ? 'nav-tab-active' : ''; ?>">
+					<?php esc_html_e('Resetare Parolă', 'ump-membership-manager'); ?>
+				</a>
 			</nav>
 			
 			<div class="ump-mm-tab-content">
@@ -217,6 +224,8 @@ class UMP_MM_Admin
                     $this->render_auto_rules_tab();
                 } elseif ('wc-status-mapping' === $active_tab) {
                     $this->render_wc_status_mapping_tab();
+                } elseif ('reset-password' === $active_tab) {
+                    $this->render_reset_password_tab();
                 }
         ?>
 			</div>
@@ -805,5 +814,71 @@ class UMP_MM_Admin
         ));
 
         wp_send_json_success(array('message' => __('Maparea de status a fost salvată.', 'ump-membership-manager')));
+    }
+
+    /**
+     * Render reset password tab
+     */
+    private function render_reset_password_tab()
+    {
+        ?>
+		<div class="ump-mm-reset-password-section">
+			<h2><?php esc_html_e('Resetare Parolă Utilizator', 'ump-membership-manager'); ?></h2>
+			<p class="description">
+				<?php esc_html_e('Introduce adresa de email a utilizatorului și apasă butonul Reset. Parola va fi setată identică cu adresa de email.', 'ump-membership-manager'); ?>
+			</p>
+			<div class="ump-mm-reset-password-form">
+				<label for="ump-mm-reset-email">
+					<?php esc_html_e('Email utilizator:', 'ump-membership-manager'); ?>
+				</label>
+				<input type="email" id="ump-mm-reset-email" class="regular-text" placeholder="<?php esc_attr_e('Introdu adresa de email...', 'ump-membership-manager'); ?>">
+				<button type="button" id="ump-mm-reset-password-btn" class="button button-primary">
+					<?php esc_html_e('Reset', 'ump-membership-manager'); ?>
+				</button>
+			</div>
+			<div id="ump-mm-reset-password-notice" style="display:none; margin-top:15px;"></div>
+		</div>
+		<?php
+    }
+
+    /**
+     * AJAX: Reset user password to their email address
+     */
+    public function ajax_reset_password()
+    {
+        $nonce_check = check_ajax_referer('ump_mm_nonce', 'nonce', false);
+        if (! $nonce_check) {
+            wp_send_json_error(array(
+                'message' => __('Sesiunea ta a expirat. Te rugăm să reîncarci pagina.', 'ump-membership-manager'),
+                'code'    => 'nonce_expired',
+            ));
+        }
+
+        if (! current_user_can('manage_options')) {
+            wp_send_json_error(array( 'message' => __('Nu ai permisiuni suficiente.', 'ump-membership-manager') ));
+        }
+
+        if (! $this->check_rate_limit('reset_password')) {
+            wp_send_json_error(array(
+                'message' => __('Prea multe cereri. Te rugăm să aștepți un minut.', 'ump-membership-manager'),
+                'code'    => 'rate_limit_exceeded',
+            ));
+        }
+
+        $email = isset($_POST['email']) ? sanitize_email($_POST['email']) : '';
+
+        if (empty($email) || ! is_email($email)) {
+            wp_send_json_error(array( 'message' => __('Adresa de email este invalidă.', 'ump-membership-manager') ));
+        }
+
+        $user = get_user_by('email', $email);
+
+        if (! $user) {
+            wp_send_json_error(array( 'message' => __('Nu a fost găsit niciun utilizator cu această adresă de email.', 'ump-membership-manager') ));
+        }
+
+        wp_set_password($email, $user->ID);
+
+        wp_send_json_success(array( 'message' => __('Parola a fost resetată cu succes. Noua parolă este adresa de email a utilizatorului.', 'ump-membership-manager') ));
     }
 }

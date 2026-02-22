@@ -298,6 +298,63 @@
 			});
 		});
 
+		// Reset password
+		$('#ump-mm-reset-password-btn').on('click', function () {
+			var email = $('#ump-mm-reset-email').val().trim();
+
+			if (!email) {
+				alert(umpMM.strings.enterEmail);
+				return;
+			}
+
+			var $btn = $(this);
+			var $notice = $('#ump-mm-reset-password-notice');
+			$btn.prop('disabled', true).text(umpMM.strings.loading);
+			$notice.hide();
+
+			$.ajax({
+				url: umpMM.ajaxUrl,
+				type: 'POST',
+				data: {
+					action: 'ump_mm_reset_password',
+					nonce: umpMM.nonce,
+					email: email
+				},
+				success: function (response) {
+					$btn.prop('disabled', false).text(umpMM.strings.resetPassword);
+
+					if (response.success) {
+						$notice
+							.removeClass('notice-error')
+							.addClass('notice notice-success')
+							.text(response.data.message || umpMM.strings.resetSuccess)
+							.show();
+						$('#ump-mm-reset-email').val('');
+					} else {
+						if (!handleAjaxError(response, 'reset_password')) {
+							$notice
+								.removeClass('notice-success')
+								.addClass('notice notice-error')
+								.text(response.data.message || umpMM.strings.error)
+								.show();
+						}
+					}
+				},
+				error: function (xhr, status, error) {
+					logError('AJAX reset_password failed', error, {
+						status: status,
+						xhr: xhr
+					});
+					$btn.prop('disabled', false).text(umpMM.strings.resetPassword);
+					$notice
+						.removeClass('notice-success')
+						.addClass('notice notice-error')
+						.text(umpMM.strings.error)
+						.show();
+				}
+			});
+		});
+
 		// Save WooCommerce status mapping
 		$('#ump-mm-save-wc-mapping-btn').on('click', function () {
 			var source = $('#ump-mm-wc-source-status').val();
