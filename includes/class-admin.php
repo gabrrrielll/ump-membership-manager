@@ -46,6 +46,7 @@ class UMP_MM_Admin
         add_action('wp_ajax_ump_mm_save_auto_rule', array( $this, 'ajax_save_auto_rule' ));
         add_action('wp_ajax_ump_mm_delete_auto_rule', array( $this, 'ajax_delete_auto_rule' ));
         add_action('wp_ajax_ump_mm_save_wc_status_mapping', array( $this, 'ajax_save_wc_status_mapping' ));
+        add_action('wp_ajax_ump_mm_delete_wc_status_mapping', array( $this, 'ajax_delete_wc_status_mapping' ));
         add_action('wp_ajax_ump_mm_reset_password', array( $this, 'ajax_reset_password' ));
     }
 
@@ -170,7 +171,10 @@ class UMP_MM_Admin
                     'confirmDelete' => __('Ești sigur că vrei să ștergi această regulă?', 'ump-membership-manager'),
                     'sessionExpired' => __('Sesiunea ta a expirat. Pagina va fi reîncărcată.', 'ump-membership-manager'),
                     'mappingSaved' => __('Maparea de status a fost salvată.', 'ump-membership-manager'),
+                    'mappingDeleted' => __('Maparea a fost ștearsă.', 'ump-membership-manager'),
                     'selectStatuses' => __('Te rugăm să selectezi ambele statusuri.', 'ump-membership-manager'),
+                    'selectMappingConditions' => __('Te rugăm să selectezi tipul produselor și metoda de plată.', 'ump-membership-manager'),
+                    'saveMapping' => __('Salvează Maparea', 'ump-membership-manager'),
                     'resetPassword'  => __('Resetează Parola', 'ump-membership-manager'),
                     'resetSuccess'   => __('Parola a fost resetată cu succes. Noua parolă este adresa de email a utilizatorului.', 'ump-membership-manager'),
                     'enterEmail'     => __('Te rugăm să introduci adresa de email.', 'ump-membership-manager'),
@@ -722,11 +726,10 @@ class UMP_MM_Admin
      */
     private function render_wc_status_mapping_tab()
     {
-        $mapping = get_option('ump_mm_wc_status_mapping', array(
-            'source' => '',
-            'target' => '',
-        ));
+        $mappings = UMP_MM_Helper::get_wc_status_mappings();
         $statuses = UMP_MM_Helper::get_wc_order_statuses();
+        $product_types = UMP_MM_Helper::get_wc_status_mapping_product_types();
+        $payment_methods = UMP_MM_Helper::get_wc_status_mapping_payment_methods();
         
         if (empty($statuses)) {
             ?>
@@ -743,10 +746,12 @@ class UMP_MM_Admin
 		<div class="ump-mm-wc-mapping-section">
 			<h2><?php esc_html_e('Mapping Status Comandă WooCommerce', 'ump-membership-manager'); ?></h2>
 			<p class="description">
-				<?php esc_html_e('Configurează o regulă pentru a schimba automat statusul unei comenzi când acesta devine cel selectat în "Stare Sursă".', 'ump-membership-manager'); ?>
+				<?php esc_html_e('Configurează reguli pentru a schimba automat statusul unei comenzi când acesta devine cel selectat în „Stare Sursă”, doar dacă se potrivesc condițiile de tip produse și metodă de plată. Mapările sunt opționale. Dacă se potrivesc mai multe reguli simultan, statusul nu se modifică.', 'ump-membership-manager'); ?>
 			</p>
 			
-			<div class="ump-mm-wc-mapping-form">
+			<div class="ump-mm-add-rule-form">
+				<h3><?php esc_html_e('Adaugă Mapare Nouă', 'ump-membership-manager'); ?></h3>
+				
 				<div class="ump-mm-rule-field">
 					<label for="ump-mm-wc-source-status">
 						<?php esc_html_e('Stare Sursă:', 'ump-membership-manager'); ?>
@@ -754,7 +759,7 @@ class UMP_MM_Admin
 					<select id="ump-mm-wc-source-status" class="ump-mm-select">
 						<option value=""><?php esc_html_e('-- Selectează Status --', 'ump-membership-manager'); ?></option>
 						<?php foreach ($statuses as $slug => $label) : ?>
-							<option value="<?php echo esc_attr($slug); ?>" <?php selected($mapping['source'], $slug); ?>>
+							<option value="<?php echo esc_attr($slug); ?>">
 								<?php echo esc_html($label); ?>
 							</option>
 						<?php endforeach; ?>
@@ -768,7 +773,35 @@ class UMP_MM_Admin
 					<select id="ump-mm-wc-target-status" class="ump-mm-select">
 						<option value=""><?php esc_html_e('-- Selectează Status --', 'ump-membership-manager'); ?></option>
 						<?php foreach ($statuses as $slug => $label) : ?>
-							<option value="<?php echo esc_attr($slug); ?>" <?php selected($mapping['target'], $slug); ?>>
+							<option value="<?php echo esc_attr($slug); ?>">
+								<?php echo esc_html($label); ?>
+							</option>
+						<?php endforeach; ?>
+					</select>
+				</div>
+
+				<div class="ump-mm-rule-field">
+					<label for="ump-mm-wc-product-type">
+						<?php esc_html_e('Tip produse:', 'ump-membership-manager'); ?>
+					</label>
+					<select id="ump-mm-wc-product-type" class="ump-mm-select">
+						<option value=""><?php esc_html_e('-- Selectează --', 'ump-membership-manager'); ?></option>
+						<?php foreach ($product_types as $value => $label) : ?>
+							<option value="<?php echo esc_attr($value); ?>">
+								<?php echo esc_html($label); ?>
+							</option>
+						<?php endforeach; ?>
+					</select>
+				</div>
+
+				<div class="ump-mm-rule-field">
+					<label for="ump-mm-wc-payment-method">
+						<?php esc_html_e('Metodă de plată:', 'ump-membership-manager'); ?>
+					</label>
+					<select id="ump-mm-wc-payment-method" class="ump-mm-select">
+						<option value=""><?php esc_html_e('-- Selectează --', 'ump-membership-manager'); ?></option>
+						<?php foreach ($payment_methods as $value => $label) : ?>
+							<option value="<?php echo esc_attr($value); ?>">
 								<?php echo esc_html($label); ?>
 							</option>
 						<?php endforeach; ?>
@@ -779,41 +812,178 @@ class UMP_MM_Admin
 					<?php esc_html_e('Salvează Maparea', 'ump-membership-manager'); ?>
 				</button>
 			</div>
+
+			<div class="ump-mm-existing-rules ump-mm-existing-wc-mappings">
+				<h3><?php esc_html_e('Mapări Existente', 'ump-membership-manager'); ?></h3>
+				
+				<?php if (empty($mappings)) : ?>
+					<p><?php esc_html_e('Nu există mapări configurate.', 'ump-membership-manager'); ?></p>
+				<?php else : ?>
+					<table class="wp-list-table widefat fixed striped">
+						<thead>
+							<tr>
+								<th><?php esc_html_e('Stare Sursă', 'ump-membership-manager'); ?></th>
+								<th><?php esc_html_e('Stare Destinație', 'ump-membership-manager'); ?></th>
+								<th><?php esc_html_e('Tip Produse', 'ump-membership-manager'); ?></th>
+								<th><?php esc_html_e('Metodă Plată', 'ump-membership-manager'); ?></th>
+								<th><?php esc_html_e('Acțiuni', 'ump-membership-manager'); ?></th>
+							</tr>
+						</thead>
+						<tbody>
+							<?php foreach ($mappings as $mapping_id => $mapping) : ?>
+								<?php
+                                $source_label = UMP_MM_Helper::get_wc_order_status_label($mapping['source']);
+							    $target_label = UMP_MM_Helper::get_wc_order_status_label($mapping['target']);
+							    $product_type = isset($mapping['product_type']) ? $mapping['product_type'] : '';
+							    $payment_method = isset($mapping['payment_method']) ? $mapping['payment_method'] : '';
+							    $product_type_label = ('' !== $product_type && isset($product_types[ $product_type ]))
+                                    ? $product_types[ $product_type ]
+                                    : __('Orice (regulă veche)', 'ump-membership-manager');
+							    $payment_method_label = ('' !== $payment_method && isset($payment_methods[ $payment_method ]))
+                                    ? $payment_methods[ $payment_method ]
+                                    : __('Orice (regulă veche)', 'ump-membership-manager');
+							    ?>
+								<tr>
+									<td><?php echo esc_html($source_label); ?></td>
+									<td><?php echo esc_html($target_label); ?></td>
+									<td><?php echo esc_html($product_type_label); ?></td>
+									<td><?php echo esc_html($payment_method_label); ?></td>
+									<td>
+										<button type="button" class="button button-small ump-mm-delete-wc-mapping" data-mapping-id="<?php echo esc_attr($mapping_id); ?>">
+											<?php esc_html_e('Șterge', 'ump-membership-manager'); ?>
+										</button>
+									</td>
+								</tr>
+							<?php endforeach; ?>
+						</tbody>
+					</table>
+				<?php endif; ?>
+			</div>
 		</div>
 		<?php
     }
 
     /**
-     * AJAX: Save WooCommerce status mapping
+     * AJAX: Save WooCommerce status mapping rule
      */
     public function ajax_save_wc_status_mapping()
     {
         $nonce_check = check_ajax_referer('ump_mm_nonce', 'nonce', false);
         if (!$nonce_check) {
-            wp_send_json_error(array('message' => __('Sesiunea ta a expirat.', 'ump-membership-manager')));
+            wp_send_json_error(array(
+                'message' => __('Sesiunea ta a expirat. Te rugăm să reîncarci pagina.', 'ump-membership-manager'),
+                'code' => 'nonce_expired',
+            ));
         }
 
         if (! current_user_can('manage_options')) {
             wp_send_json_error(array('message' => __('Nu ai permisiuni suficiente.', 'ump-membership-manager')));
         }
 
+        if (!$this->check_rate_limit('save_wc_status_mapping')) {
+            wp_send_json_error(array(
+                'message' => __('Prea multe cereri. Te rugăm să aștepți un minut.', 'ump-membership-manager'),
+                'code' => 'rate_limit_exceeded',
+            ));
+        }
+
         $source = isset($_POST['source']) ? sanitize_text_field($_POST['source']) : '';
         $target = isset($_POST['target']) ? sanitize_text_field($_POST['target']) : '';
+        $product_type = isset($_POST['product_type']) ? sanitize_text_field($_POST['product_type']) : '';
+        $payment_method = isset($_POST['payment_method']) ? sanitize_text_field($_POST['payment_method']) : '';
 
         if (empty($source) || empty($target)) {
             wp_send_json_error(array('message' => __('Te rugăm să selectezi ambele statusuri.', 'ump-membership-manager')));
+        }
+
+        if (empty($product_type) || empty($payment_method)) {
+            wp_send_json_error(array('message' => __('Te rugăm să selectezi tipul produselor și metoda de plată.', 'ump-membership-manager')));
         }
 
         if ($source === $target) {
             wp_send_json_error(array('message' => __('Statusul sursă și cel destinație nu pot fi identice.', 'ump-membership-manager')));
         }
 
-        update_option('ump_mm_wc_status_mapping', array(
-            'source' => $source,
-            'target' => $target,
-        ));
+        $allowed_product_types = array_keys(UMP_MM_Helper::get_wc_status_mapping_product_types());
+        $allowed_payment_methods = array_keys(UMP_MM_Helper::get_wc_status_mapping_payment_methods());
+
+        if (! in_array($product_type, $allowed_product_types, true)) {
+            wp_send_json_error(array('message' => __('Tip produse invalid.', 'ump-membership-manager')));
+        }
+
+        if (! in_array($payment_method, $allowed_payment_methods, true)) {
+            wp_send_json_error(array('message' => __('Metodă de plată invalidă.', 'ump-membership-manager')));
+        }
+
+        $statuses = UMP_MM_Helper::get_wc_order_statuses();
+        if (! isset($statuses[ $source ]) || ! isset($statuses[ $target ])) {
+            wp_send_json_error(array('message' => __('Status WooCommerce invalid.', 'ump-membership-manager')));
+        }
+
+        $mappings = UMP_MM_Helper::get_wc_status_mappings();
+
+        foreach ($mappings as $mapping) {
+            if ($mapping['source'] === $source
+                && $mapping['target'] === $target
+                && (isset($mapping['product_type']) ? $mapping['product_type'] : '') === $product_type
+                && (isset($mapping['payment_method']) ? $mapping['payment_method'] : '') === $payment_method
+            ) {
+                wp_send_json_error(array('message' => __('Această mapare există deja.', 'ump-membership-manager')));
+            }
+        }
+
+        $mapping_id = time() . '_' . wp_rand(1000, 9999);
+        $mappings[ $mapping_id ] = array(
+            'source'         => $source,
+            'target'         => $target,
+            'product_type'   => $product_type,
+            'payment_method' => $payment_method,
+        );
+
+        update_option('ump_mm_wc_status_mappings', $mappings);
 
         wp_send_json_success(array('message' => __('Maparea de status a fost salvată.', 'ump-membership-manager')));
+    }
+
+    /**
+     * AJAX: Delete WooCommerce status mapping rule
+     */
+    public function ajax_delete_wc_status_mapping()
+    {
+        $nonce_check = check_ajax_referer('ump_mm_nonce', 'nonce', false);
+        if (!$nonce_check) {
+            wp_send_json_error(array(
+                'message' => __('Sesiunea ta a expirat. Te rugăm să reîncarci pagina.', 'ump-membership-manager'),
+                'code' => 'nonce_expired',
+            ));
+        }
+
+        if (! current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => __('Nu ai permisiuni suficiente.', 'ump-membership-manager')));
+        }
+
+        if (!$this->check_rate_limit('delete_wc_status_mapping')) {
+            wp_send_json_error(array(
+                'message' => __('Prea multe cereri. Te rugăm să aștepți un minut.', 'ump-membership-manager'),
+                'code' => 'rate_limit_exceeded',
+            ));
+        }
+
+        $mapping_id = isset($_POST['mapping_id']) ? sanitize_text_field($_POST['mapping_id']) : '';
+
+        if (! $mapping_id) {
+            wp_send_json_error(array('message' => __('ID mapare invalid.', 'ump-membership-manager')));
+        }
+
+        $mappings = UMP_MM_Helper::get_wc_status_mappings();
+
+        if (isset($mappings[ $mapping_id ])) {
+            unset($mappings[ $mapping_id ]);
+            update_option('ump_mm_wc_status_mappings', $mappings);
+            wp_send_json_success(array('message' => __('Maparea a fost ștearsă.', 'ump-membership-manager')));
+        }
+
+        wp_send_json_error(array('message' => __('Maparea nu a fost găsită.', 'ump-membership-manager')));
     }
 
     /**

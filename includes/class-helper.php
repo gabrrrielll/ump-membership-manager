@@ -350,4 +350,200 @@ class UMP_MM_Helper
 
         return wc_get_order_statuses();
     }
+
+    /**
+     * WooCommerce payment gateway ID for NETOPIA Payments.
+     */
+    const WC_PAYMENT_NETOPIA = 'netopiapayments';
+
+    /**
+     * WooCommerce payment gateway ID for bank transfer.
+     */
+    const WC_PAYMENT_BACS = 'bacs';
+
+    /**
+     * Product type options for WC status mapping rules.
+     *
+     * @return array
+     */
+    public static function get_wc_status_mapping_product_types()
+    {
+        return array(
+            'digital'  => __('Doar produse digitale (toate virtuale)', 'ump-membership-manager'),
+            'physical' => __('Conține produs fizic (cel puțin unul)', 'ump-membership-manager'),
+        );
+    }
+
+    /**
+     * Payment method options for WC status mapping rules.
+     *
+     * @return array
+     */
+    public static function get_wc_status_mapping_payment_methods()
+    {
+        return array(
+            self::WC_PAYMENT_NETOPIA => __('Card (NETOPIA Payments)', 'ump-membership-manager'),
+            self::WC_PAYMENT_BACS     => __('Transfer bancar', 'ump-membership-manager'),
+        );
+    }
+
+    /**
+     * Get saved WC status mapping rules (migrates legacy single mapping if needed).
+     *
+     * @return array
+     */
+    public static function get_wc_status_mappings()
+    {
+        $mappings = get_option('ump_mm_wc_status_mappings', null);
+
+        if (null !== $mappings) {
+            return is_array($mappings) ? $mappings : array();
+        }
+
+        $legacy = get_option('ump_mm_wc_status_mapping', array());
+        if (! empty($legacy['source']) && ! empty($legacy['target'])) {
+            $mappings = array(
+                'migrated_' . time() => array(
+                    'source'         => $legacy['source'],
+                    'target'         => $legacy['target'],
+                    'product_type'   => '',
+                    'payment_method' => '',
+                ),
+            );
+            update_option('ump_mm_wc_status_mappings', $mappings);
+            delete_option('ump_mm_wc_status_mapping');
+
+            return $mappings;
+        }
+
+        update_option('ump_mm_wc_status_mappings', array());
+
+        return array();
+    }
+
+    /**
+     * Normalize WooCommerce order status slug (strip wc- prefix).
+     *
+     * @param string $status Status slug.
+     * @return string
+     */
+    public static function normalize_wc_status_slug($status)
+    {
+        return str_replace('wc-', '', (string) $status);
+    }
+
+    /**
+     * Check if order contains only virtual (digital) products.
+     *
+     * @param WC_Order $order Order object.
+     * @return bool
+     */
+    public static function order_has_only_digital_products($order)
+    {
+        if (! $order || ! is_a($order, 'WC_Order')) {
+            return false;
+        }
+
+        $items = $order->get_items();
+        if (empty($items)) {
+            return false;
+        }
+
+        foreach ($items as $item) {
+            $product = $item->get_product();
+            if (! $product) {
+                return false;
+            }
+
+            if (! $product->is_virtual()) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Check if order contains at least one physical (non-virtual) product.
+     *
+     * @param WC_Order $order Order object.
+     * @return bool
+     */
+    public static function order_has_physical_product($order)
+    {
+        if (! $order || ! is_a($order, 'WC_Order')) {
+            return false;
+        }
+
+        foreach ($order->get_items() as $item) {
+            $product = $item->get_product();
+            if ($product && ! $product->is_virtual()) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if order matches a WC status mapping product type condition.
+     *
+     * @param WC_Order $order        Order object.
+     * @param string   $product_type digital|physical|empty (legacy wildcard).
+     * @return bool
+     */
+    public static function order_matches_wc_mapping_product_type($order, $product_type)
+    {
+        if ('' === $product_type) {
+            return true;
+        }
+
+        if ('digital' === $product_type) {
+            return self::order_has_only_digital_products($order);
+        }
+
+        if ('physical' === $product_type) {
+            return self::order_has_physical_product($order);
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if order matches a WC status mapping payment method condition.
+     *
+     * @param WC_Order $order          Order object.
+     * @param string   $payment_method Gateway ID or empty (legacy wildcard).
+     * @return bool
+     */
+    public static function order_matches_wc_mapping_payment_method($order, $payment_method)
+    {
+        if ('' === $payment_method) {
+            return true;
+        }
+
+        return $order->get_payment_method() === $payment_method;
+    }
+
+    /**
+     * Get human-readable label for a WC status slug.
+     *
+     * @param string $slug Status slug.
+     * @return string
+     */
+    public static function get_wc_order_status_label($slug)
+    {
+        $statuses = self::get_wc_order_statuses();
+
+        if (isset($statuses[ $slug ])) {
+            return $statuses[ $slug ];
+        }
+
+        $prefixed = 'wc-' . self::normalize_wc_status_slug($slug);
+        if (isset($statuses[ $prefixed ])) {
+            return $statuses[ $prefixed ];
+        }
+
+        return $slug;
+    }
 }

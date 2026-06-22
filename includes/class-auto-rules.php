@@ -213,33 +213,70 @@ class UMP_MM_Auto_Rules
      */
     public function handle_wc_order_status_changed($order_id, $from, $to, $order)
     {
-        // Get mapping setting
-        $mapping = get_option('ump_mm_wc_status_mapping', array());
+        $mappings = UMP_MM_Helper::get_wc_status_mappings();
 
-        if (empty($mapping['source']) || empty($mapping['target'])) {
+        if (empty($mappings)) {
             return;
         }
 
-        // Clean status slugs (remove 'wc-' prefix if present, though hooks usually don't have it)
-        $source_status = str_replace('wc-', '', $mapping['source']);
-        $target_status = str_replace('wc-', '', $mapping['target']);
-        $current_to = str_replace('wc-', '', $to);
+        if (! $order || ! is_a($order, 'WC_Order')) {
+            $order = wc_get_order($order_id);
+        }
 
-        // Check if current new status matches source status
-        if ($current_to === $source_status) {
-            // Change status to target status
-            // We use a small delay or check to avoid infinite loops if source == target (already handled in save)
-            if ($source_status !== $target_status) {
-                $order->update_status($target_status, __('Status modificat automat prin UMP Membership Manager.', 'ump-membership-manager'));
-                
+        if (! $order) {
+            return;
+        }
+
+        $current_to = UMP_MM_Helper::normalize_wc_status_slug($to);
+        $matching_rules = array();
+
+        foreach ($mappings as $mapping) {
+            if (empty($mapping['source']) || empty($mapping['target'])) {
+                continue;
+            }
+
+            $source_status = UMP_MM_Helper::normalize_wc_status_slug($mapping['source']);
+            $target_status = UMP_MM_Helper::normalize_wc_status_slug($mapping['target']);
+
+            if ($current_to !== $source_status || $source_status === $target_status) {
+                continue;
+            }
+
+            $product_type = isset($mapping['product_type']) ? $mapping['product_type'] : '';
+            $payment_method = isset($mapping['payment_method']) ? $mapping['payment_method'] : '';
+
+            if (! UMP_MM_Helper::order_matches_wc_mapping_product_type($order, $product_type)) {
+                continue;
+            }
+
+            if (! UMP_MM_Helper::order_matches_wc_mapping_payment_method($order, $payment_method)) {
+                continue;
+            }
+
+            $matching_rules[] = $mapping;
+        }
+
+        if (count($matching_rules) !== 1) {
+            if (count($matching_rules) > 1) {
                 error_log(sprintf(
-                    'UMP MM: Order %d status automatically changed from %s to %s (Mapped from %s)',
+                    'UMP MM: Order %d status not changed - %d matching WC mapping rules (ambiguous)',
                     $order_id,
-                    $from,
-                    $target_status,
-                    $source_status
+                    count($matching_rules)
                 ));
             }
+            return;
         }
+
+        $rule = $matching_rules[0];
+        $target_status = UMP_MM_Helper::normalize_wc_status_slug($rule['target']);
+
+        $order->update_status($target_status, __('Status modificat automat prin UMP Membership Manager.', 'ump-membership-manager'));
+
+        error_log(sprintf(
+            'UMP MM: Order %d status automatically changed from %s to %s (WC mapping rule matched)',
+            $order_id,
+            $from,
+            $target_status
+        ));
     }
 }

@@ -359,9 +359,16 @@
 		$('#ump-mm-save-wc-mapping-btn').on('click', function () {
 			var source = $('#ump-mm-wc-source-status').val();
 			var target = $('#ump-mm-wc-target-status').val();
+			var productType = $('#ump-mm-wc-product-type').val();
+			var paymentMethod = $('#ump-mm-wc-payment-method').val();
 
 			if (!source || !target) {
 				alert(umpMM.strings.selectStatuses);
+				return;
+			}
+
+			if (!productType || !paymentMethod) {
+				alert(umpMM.strings.selectMappingConditions);
 				return;
 			}
 
@@ -375,13 +382,16 @@
 					action: 'ump_mm_save_wc_status_mapping',
 					nonce: umpMM.nonce,
 					source: source,
-					target: target
+					target: target,
+					product_type: productType,
+					payment_method: paymentMethod
 				},
 				success: function (response) {
-					$btn.prop('disabled', false).text('Salvează Maparea');
+					$btn.prop('disabled', false).text(umpMM.strings.saveMapping);
 
 					if (response.success) {
 						alert(response.data.message || umpMM.strings.mappingSaved);
+						location.reload();
 					} else {
 						if (!handleAjaxError(response, 'save_wc_status_mapping')) {
 							alert(response.data.message || umpMM.strings.error);
@@ -393,9 +403,57 @@
 						status: status,
 						xhr: xhr,
 						source: source,
-						target: target
+						target: target,
+						productType: productType,
+						paymentMethod: paymentMethod
 					});
-					$btn.prop('disabled', false).text('Salvează Maparea');
+					$btn.prop('disabled', false).text(umpMM.strings.saveMapping);
+					alert(umpMM.strings.error);
+				}
+			});
+		});
+
+		// Delete WooCommerce status mapping
+		$('.ump-mm-existing-wc-mappings').on('click', '.ump-mm-delete-wc-mapping', function () {
+			if (!confirm(umpMM.strings.confirmDelete)) {
+				return;
+			}
+
+			var $btn = $(this);
+			var mappingId = $btn.data('mapping-id');
+
+			$btn.prop('disabled', true);
+
+			$.ajax({
+				url: umpMM.ajaxUrl,
+				type: 'POST',
+				data: {
+					action: 'ump_mm_delete_wc_status_mapping',
+					nonce: umpMM.nonce,
+					mapping_id: mappingId
+				},
+				success: function (response) {
+					if (response.success) {
+						$btn.closest('tr').fadeOut(function () {
+							$(this).remove();
+							if ($('.ump-mm-delete-wc-mapping').length === 0) {
+								location.reload();
+							}
+						});
+					} else {
+						$btn.prop('disabled', false);
+						if (!handleAjaxError(response, 'delete_wc_status_mapping')) {
+							alert(response.data.message || umpMM.strings.error);
+						}
+					}
+				},
+				error: function (xhr, status, error) {
+					logError('AJAX delete_wc_status_mapping failed', error, {
+						status: status,
+						xhr: xhr,
+						mappingId: mappingId
+					});
+					$btn.prop('disabled', false);
 					alert(umpMM.strings.error);
 				}
 			});

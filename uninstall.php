@@ -20,6 +20,8 @@ global $wpdb;
 
 // Delete plugin options
 delete_option('ump_mm_auto_rules');
+delete_option('ump_mm_wc_status_mappings');
+delete_option('ump_mm_wc_status_mapping');
 
 // Delete all transients (rate limits and locks)
 $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_ump_mm_%' OR option_name LIKE '_transient_timeout_ump_mm_%'");
